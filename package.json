@@ -1,0 +1,14 @@
+{
+  "name": "bots",
+  "private": true,
+  "type": "module",
+  "workspaces": ["bots/*"],
+  "scripts": {
+    "dev:telegram": "bun run --filter @bots/telegram dev",
+    "smee:telegram": "bun run --filter @bots/telegram smee"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@bots/telegram",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "smee": "bunx smee-client --url $SMEE_URL --port ${PORT:-3000} --path /webhook"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.77"
+  }
+}
