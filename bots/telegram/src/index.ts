@@ -173,7 +173,7 @@ async function handleMention(update: any) {
         settingSources: ["project"],
         maxTurns: 10,
         permissionMode: "dontAsk",
-        allowedTools: ['Bash(*channel-history*)']
+        allowedTools: ['Bash(*channel-history*)', 'Bash(*update-member*)']
       },
     })) {
       if (msg.type === "system" && (msg as any).subtype === "init") {

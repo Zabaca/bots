@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { resolve } from "path";
 
-const DB_PATH = resolve(import.meta.dir, "../data/messages.db");
+const DB_PATH = Bun.env.DB_PATH || resolve(import.meta.dir, "../data/messages.db");
 const db = new Database(DB_PATH, { create: true });
 
 db.run("PRAGMA journal_mode = WAL");
