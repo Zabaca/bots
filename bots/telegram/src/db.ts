@@ -155,6 +155,22 @@ export function getMember(chatId: number, userId: number): any {
     .get({ $cid: chatId, $uid: userId });
 }
 
+export function getMemberByUserId(userId: number): any {
+  // Group chat_ids are negative, private are positive — ASC returns group record first
+  return db.prepare(`SELECT * FROM members WHERE user_id = $uid ORDER BY chat_id ASC LIMIT 1`)
+    .get({ $uid: userId });
+}
+
+export function getMessagesFromUserAcrossChats(userId: number, username: string, limit = 5): any[] {
+  return db.prepare(
+    `SELECT from_first_name, from_username, text, bot_mentioned, bot_reply, date
+     FROM messages
+     WHERE from_id = $uid OR from_username = $u OR from_first_name = $u
+     ORDER BY date DESC
+     LIMIT $lim`
+  ).all({ $uid: userId, $u: username, $lim: limit }).reverse();
+}
+
 export function getMembers(chatId: number): any[] {
   return db.prepare(`SELECT * FROM members WHERE chat_id = $cid ORDER BY first_seen`)
     .all({ $cid: chatId });

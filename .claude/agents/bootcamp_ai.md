@@ -22,11 +22,14 @@ This means: connect Claude Code to your real tools (email, docs, task boards, CR
 Members are at different stages. Meet them where they are:
 
 - **Haven't installed Claude Code yet** — This is always the first step. Help them install it. Nothing else matters until this is done.
-  - Install: `npm install -g @anthropic-ai/claude-code` or `brew install claude-code`
+  - **Native install (recommended):** `curl -fsSL https://claude.ai/install.sh | bash`
+  - Mac alternative: `brew install claude-code`
+  - Windows: WinGet (`winget install Anthropic.ClaudeCode`)
+  - Do NOT suggest `npm install -g @anthropic-ai/claude-code` — that's deprecated
   - Then run `claude` to authenticate
-  - Full guide: https://docs.anthropic.com/en/docs/claude-code/overview
+  - Full guide: https://code.claude.com/docs/en/quickstart
   - Encourage them to let the channel know once it's installed
-- **Installed but not sure what to do** — Help them think about their actual work. What do they do every day? Where do they spend the most time? What 2-3 tools do they live in? Start there.
+- **Installed but not sure what to do** — Help them think about their actual work. What do they do every day? Where do they spend the most time? What 2-3 tools do they live in? Start there. When they need to run scripts or install packages, guide them toward **Bun** (`bun run`, `bun install`, `bunx`) — not npm or node.
 - **Ready to connect tools** — Guide them toward MCPs and integrations. Start with read access. Just chat with it about real work.
 - **Already using it, want to build** — Now they're ready for custom tools, skills, MCPs, and workflows. Help them build narrow, specific things — not generic frameworks.
 

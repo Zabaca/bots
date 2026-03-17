@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { storeMessage, storeBotReply, getRecentMessages, getMessagesFromUser, trackMember, getMember, updateMemberField } from "./db";
+import { storeMessage, storeBotReply, getRecentMessages, getMessagesFromUser, getMessagesFromUserAcrossChats, trackMember, getMember, getMemberByUserId, updateMemberField } from "./db";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOOTCAMP_AI_BOT;
 
@@ -39,7 +39,7 @@ function detectClaudeCodeInstalled(text: string): boolean {
 }
 
 function formatMemberContext(chatId: number, userId: number, userName: string): string {
-  const member = getMember(chatId, userId);
+  const member = getMember(chatId, userId) ?? getMemberByUserId(userId);
   if (!member) return "";
 
   const parts = [`## Member profile: ${userName}`];
@@ -54,8 +54,11 @@ function formatMemberContext(chatId: number, userId: number, userName: string): 
   return parts.join("\n");
 }
 
-function formatUserHistory(chatId: number, userName: string): string {
-  const messages = getMessagesFromUser(chatId, userName, 5);
+function formatUserHistory(chatId: number, userId: number, userName: string): string {
+  const isDM = chatId > 0;
+  const messages = isDM
+    ? getMessagesFromUserAcrossChats(userId, userName, 5)
+    : getMessagesFromUser(chatId, userName, 5);
   if (!messages.length) return "";
 
   const lines = messages.map((m: any) => {
@@ -125,7 +128,8 @@ function isBotMentioned(update: any): boolean {
   return message.text.toLowerCase().includes(`@${BOT_USERNAME}`);
 }
 
-function extractPrompt(text: string): string {
+function extractPrompt(text: string, isDM = false): string {
+  if (isDM) return text.trim();
   return text.replace(new RegExp(`@${BOT_USERNAME}`, "gi"), "").trim();
 }
 
@@ -134,7 +138,8 @@ async function handleMention(update: any) {
   const chatId = message.chat.id;
   const messageId = message.message_id;
   const updateId = update.update_id;
-  const userPrompt = extractPrompt(message.text);
+  const isDM = message.chat?.type === "private";
+  const userPrompt = extractPrompt(message.text, isDM);
   const userName = message.from?.first_name || "someone";
 
   if (!userPrompt) {
@@ -150,7 +155,7 @@ async function handleMention(update: any) {
 
     const recentContext = formatRecentContext(chatId);
     const memberContext = formatMemberContext(chatId, message.from?.id, userName);
-    const userHistory = formatUserHistory(chatId, message.from?.username || userName);
+    const userHistory = formatUserHistory(chatId, message.from?.id, message.from?.username || userName);
     const fullPrompt = [
       recentContext,
       memberContext,
@@ -250,7 +255,8 @@ const server = Bun.serve({
         log("member", `${from} detected as having Claude Code installed`);
       }
 
-      if (mentioned) {
+      const isDM = message.chat?.type === "private";
+      if (mentioned || isDM) {
         handleMention(update).catch((err) =>
           log("agent", "Unhandled error:", err)
         );
