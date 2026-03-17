@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { storeMessage, storeBotReply, getRecentMessages } from "./db";
+import { storeMessage, storeBotReply, getRecentMessages, getMessagesFromUser, trackMember, getMember, updateMemberField } from "./db";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOOTCAMP_AI_BOT;
 
@@ -8,7 +8,7 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
-const BOT_USERNAME = "ai_bootcamp";
+const BOT_USERNAME = "bootcamp_ai_bot";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const PROJECT_DIR = new URL("../../..", import.meta.url).pathname;
 
@@ -20,6 +20,54 @@ function log(tag: string, ...args: any[]) {
   const line = `[${ts}] [${tag}] ${args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")}`;
   console.log(line);
   appendFileSync(LOG_FILE, line + "\n");
+}
+
+const INSTALL_PATTERNS = [
+  /installed claude code/i,
+  /claude code is (working|installed|running|set up)/i,
+  /got claude code (working|installed|running|set up)/i,
+  /claude code (is )?ready/i,
+  /just installed claude/i,
+  /claude --version/i,
+  /claude code cli/i,
+  /npm install -g @anthropic-ai\/claude-code/i,
+  /brew install claude/i,
+];
+
+function detectClaudeCodeInstalled(text: string): boolean {
+  return INSTALL_PATTERNS.some((p) => p.test(text));
+}
+
+function formatMemberContext(chatId: number, userId: number, userName: string): string {
+  const member = getMember(chatId, userId);
+  if (!member) return "";
+
+  const parts = [`## Member profile: ${userName}`];
+  parts.push(`- Claude Code installed: ${member.claude_code_installed ? "yes" : "not yet"}`);
+
+  const meta = typeof member.meta === "string" ? JSON.parse(member.meta) : member.meta;
+  for (const [k, v] of Object.entries(meta || {})) {
+    if (v) parts.push(`- ${k}: ${v}`);
+  }
+
+  parts.push(`- First seen: ${member.first_seen}`);
+  return parts.join("\n");
+}
+
+function formatUserHistory(chatId: number, userName: string): string {
+  const messages = getMessagesFromUser(chatId, userName, 5);
+  if (!messages.length) return "";
+
+  const lines = messages.map((m: any) => {
+    const time = new Date(m.date * 1000).toLocaleString();
+    let line = `[${time}] ${m.text}`;
+    if (m.bot_reply) {
+      line += `\n  └─ bot replied: ${m.bot_reply.slice(0, 150)}${m.bot_reply.length > 150 ? "..." : ""}`;
+    }
+    return line;
+  });
+
+  return `## ${userName}'s recent messages\n\n${lines.join("\n")}`;
 }
 
 function formatRecentContext(chatId: number): string {
@@ -101,8 +149,12 @@ async function handleMention(update: any) {
     let resultText = "";
 
     const recentContext = formatRecentContext(chatId);
+    const memberContext = formatMemberContext(chatId, message.from?.id, userName);
+    const userHistory = formatUserHistory(chatId, message.from?.username || userName);
     const fullPrompt = [
       recentContext,
+      memberContext,
+      userHistory,
       `A bootcamp member named ${userName} asks: ${userPrompt}`,
     ].filter(Boolean).join("\n\n");
 
@@ -145,9 +197,8 @@ async function handleMention(update: any) {
 
     if (resultText) {
       log("agent", `Reply (${resultText.length} chars):\n${resultText}`);
-      // TODO: re-enable when ready to go live
-      // const reply = resultText.length > 4000 ? resultText.slice(0, 4000) + "..." : resultText;
-      // await sendMessage(chatId, reply, messageId);
+      const reply = resultText.length > 4000 ? resultText.slice(0, 4000) + "..." : resultText;
+      await sendMessage(chatId, reply, messageId);
     } else {
       log("agent", "No text in agent response");
     }
@@ -178,6 +229,12 @@ const server = Bun.serve({
       log("webhook", `${from}: "${text}" | mentioned=${mentioned} | entities=${JSON.stringify(message.entities || [])}`);
 
       storeMessage(update, mentioned);
+      trackMember(message.chat.id, message.from);
+
+      if (text && message.from && detectClaudeCodeInstalled(text)) {
+        updateMemberField(message.chat.id, message.from.id, "claude_code_installed", true);
+        log("member", `${from} detected as having Claude Code installed`);
+      }
 
       if (mentioned) {
         handleMention(update).catch((err) =>

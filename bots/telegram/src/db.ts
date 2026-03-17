@@ -29,6 +29,21 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    username TEXT,
+    first_name TEXT,
+    claude_code_installed INTEGER DEFAULT 0,
+    meta JSON DEFAULT '{}',
+    first_seen TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(chat_id, user_id)
+  )
+`);
+
 const insertStmt = db.prepare(`
   INSERT OR IGNORE INTO messages
     (update_id, message_id, chat_id, chat_type, chat_title, from_id, from_username, from_first_name, text, date, entities, bot_mentioned, raw)
@@ -102,6 +117,47 @@ export function getMessagesFromUser(chatId: number, username: string, limit = 20
     )
     .all({ $cid: chatId, $u: username, $lim: limit })
     .reverse();
+}
+
+// --- Members ---
+
+const upsertMemberStmt = db.prepare(`
+  INSERT INTO members (chat_id, user_id, username, first_name)
+  VALUES ($cid, $uid, $username, $first_name)
+  ON CONFLICT(chat_id, user_id) DO UPDATE SET
+    username = COALESCE($username, username),
+    first_name = COALESCE($first_name, first_name),
+    updated_at = datetime('now')
+`);
+
+export function trackMember(chatId: number, user: any) {
+  if (!user || user.is_bot) return;
+  upsertMemberStmt.run({
+    $cid: chatId,
+    $uid: user.id,
+    $username: user.username || null,
+    $first_name: user.first_name || null,
+  });
+}
+
+export function updateMemberField(chatId: number, userId: number, field: string, value: any) {
+  if (field === "claude_code_installed") {
+    db.prepare(`UPDATE members SET claude_code_installed = $val, updated_at = datetime('now') WHERE chat_id = $cid AND user_id = $uid`)
+      .run({ $cid: chatId, $uid: userId, $val: value ? 1 : 0 });
+  } else {
+    db.prepare(`UPDATE members SET meta = json_set(meta, '$.' || $field, $val), updated_at = datetime('now') WHERE chat_id = $cid AND user_id = $uid`)
+      .run({ $cid: chatId, $uid: userId, $field: field, $val: value });
+  }
+}
+
+export function getMember(chatId: number, userId: number): any {
+  return db.prepare(`SELECT * FROM members WHERE chat_id = $cid AND user_id = $uid`)
+    .get({ $cid: chatId, $uid: userId });
+}
+
+export function getMembers(chatId: number): any[] {
+  return db.prepare(`SELECT * FROM members WHERE chat_id = $cid ORDER BY first_seen`)
+    .all({ $cid: chatId });
 }
 
 export default db;
