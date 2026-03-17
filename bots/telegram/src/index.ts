@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { storeMessage, storeBotReply } from "./db";
+import { storeMessage, storeBotReply, getRecentMessages } from "./db";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOOTCAMP_AI_BOT;
 
@@ -9,38 +9,35 @@ if (!BOT_TOKEN) {
 }
 
 const BOT_USERNAME = "ai_bootcamp";
-const AGENT_PATH = new URL("../../../.claude/agents/bootcamp_ai.md", import.meta.url).pathname;
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const PROJECT_DIR = new URL("../../..", import.meta.url).pathname;
+
+import { appendFileSync } from "node:fs";
+const LOG_FILE = new URL("../data/bot.log", import.meta.url).pathname;
 
 function log(tag: string, ...args: any[]) {
   const ts = new Date().toLocaleTimeString();
-  console.log(`[${ts}] [${tag}]`, ...args);
+  const line = `[${ts}] [${tag}] ${args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")}`;
+  console.log(line);
+  appendFileSync(LOG_FILE, line + "\n");
 }
 
-async function loadAgentDefinition() {
-  const raw = await Bun.file(AGENT_PATH).text();
-  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (!fmMatch) throw new Error("Invalid agent definition — missing frontmatter");
+function formatRecentContext(chatId: number): string {
+  const messages = getRecentMessages(chatId, 10);
+  if (!messages.length) return "";
 
-  const frontmatter = fmMatch[1];
-  const prompt = fmMatch[2].trim();
+  const lines = messages.map((m: any) => {
+    const name = m.from_username ? `${m.from_first_name} (@${m.from_username})` : m.from_first_name;
+    const time = new Date(m.date * 1000).toLocaleString();
+    let line = `[${time}] ${name}: ${m.text}`;
+    if (m.bot_reply) {
+      line += `\n  └─ bot replied: ${m.bot_reply.slice(0, 150)}${m.bot_reply.length > 150 ? "..." : ""}`;
+    }
+    return line;
+  });
 
-  const get = (key: string) => {
-    const m = frontmatter.match(new RegExp(`^${key}:\\s*"?(.+?)"?$`, "m"));
-    return m ? m[1].trim() : undefined;
-  };
-
-  return {
-    name: get("name") || "bootcamp-ai",
-    description: get("description") || "",
-    model: get("model") as "sonnet" | "opus" | "haiku" | undefined,
-    tools: get("tools")?.split(",").map((t) => t.trim()),
-    prompt,
-  };
+  return `## Recent channel history (chat_id=${chatId})\n\n${lines.join("\n")}`;
 }
-
-const agentDef = await loadAgentDefinition();
-log("agent", `Loaded agent "${agentDef.name}" (model=${agentDef.model}, tools=${agentDef.tools?.join(", ")})`);
 
 async function sendMessage(chatId: number, text: string, replyToMessageId?: number) {
   log("telegram", `Sending reply to chat ${chatId}`);
@@ -103,26 +100,36 @@ async function handleMention(update: any) {
   try {
     let resultText = "";
 
+    const recentContext = formatRecentContext(chatId);
+    const fullPrompt = [
+      recentContext,
+      `A bootcamp member named ${userName} asks: ${userPrompt}`,
+    ].filter(Boolean).join("\n\n");
+
+    log("agent", `Context: ${recentContext ? recentContext.split("\n").length - 2 + " messages preloaded" : "no history"}`);
+
     for await (const msg of query({
-      prompt: `A bootcamp member named ${userName} asks: ${userPrompt}`,
+      prompt: fullPrompt,
       options: {
-        agent: agentDef.name,
-        agents: {
-          [agentDef.name]: {
-            description: agentDef.description,
-            prompt: agentDef.prompt,
-            model: agentDef.model,
-            tools: agentDef.tools,
-            maxTurns: 3,
-          },
-        },
-        permissionMode: "plan",
+        agent: "bootcamp-ai",
+        cwd: PROJECT_DIR,
+        settingSources: ["project"],
+        maxTurns: 10,
+        permissionMode: "dontAsk",
+        allowedTools: ['Bash']
       },
     })) {
+      if (msg.type === "system" && (msg as any).subtype === "init") {
+        const init = msg as any;
+        log("agent", `Init — model=${init.model} tools=${JSON.stringify(init.tools)} skills=${JSON.stringify(init.skills)}`);
+      }
+
       if (msg.type === "assistant" && msg.message?.content) {
         for (const block of msg.message.content) {
           if ("text" in block) {
             resultText += block.text;
+          } else if ("name" in block) {
+            log("agent", `Tool: ${(block as any).name}(${JSON.stringify((block as any).input || {}).slice(0, 200)})`);
           }
         }
       }
@@ -144,8 +151,8 @@ async function handleMention(update: any) {
     } else {
       log("agent", "No text in agent response");
     }
-  } catch (err) {
-    log("agent", "Error:", err);
+  } catch (err: any) {
+    log("agent", "Error:", err?.message || err?.stack || JSON.stringify(err, Object.getOwnPropertyNames(err)));
     await sendMessage(chatId, "Sorry, I hit an error processing that. Try again?", messageId);
   }
 }

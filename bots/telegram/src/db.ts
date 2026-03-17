@@ -65,4 +65,43 @@ export function storeBotReply(updateId: number, reply: string, cost: number) {
   updateReplyStmt.run({ $update_id: updateId, $reply: reply, $cost: cost });
 }
 
+export function getRecentMessages(chatId: number, limit = 10): any[] {
+  return db
+    .prepare(
+      `SELECT from_first_name, from_username, text, bot_mentioned, bot_reply, date
+       FROM messages
+       WHERE chat_id = $cid AND text IS NOT NULL
+       ORDER BY date DESC
+       LIMIT $lim`
+    )
+    .all({ $cid: chatId, $lim: limit })
+    .reverse();
+}
+
+export function searchMessages(chatId: number, keyword: string, limit = 20): any[] {
+  return db
+    .prepare(
+      `SELECT from_first_name, from_username, text, bot_mentioned, bot_reply, date
+       FROM messages
+       WHERE chat_id = $cid AND text LIKE '%' || $q || '%'
+       ORDER BY date DESC
+       LIMIT $lim`
+    )
+    .all({ $cid: chatId, $q: keyword, $lim: limit })
+    .reverse();
+}
+
+export function getMessagesFromUser(chatId: number, username: string, limit = 20): any[] {
+  return db
+    .prepare(
+      `SELECT from_first_name, from_username, text, bot_mentioned, bot_reply, date
+       FROM messages
+       WHERE chat_id = $cid AND (from_username = $u OR from_first_name = $u)
+       ORDER BY date DESC
+       LIMIT $lim`
+    )
+    .all({ $cid: chatId, $u: username, $lim: limit })
+    .reverse();
+}
+
 export default db;
