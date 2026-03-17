@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { storeMessage, storeBotReply } from "./db";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOOTCAMP_AI_BOT;
 
@@ -16,11 +17,30 @@ function log(tag: string, ...args: any[]) {
   console.log(`[${ts}] [${tag}]`, ...args);
 }
 
-async function loadAgentPrompt(): Promise<string> {
+async function loadAgentDefinition() {
   const raw = await Bun.file(AGENT_PATH).text();
-  const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
-  return match ? match[1].trim() : raw;
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!fmMatch) throw new Error("Invalid agent definition — missing frontmatter");
+
+  const frontmatter = fmMatch[1];
+  const prompt = fmMatch[2].trim();
+
+  const get = (key: string) => {
+    const m = frontmatter.match(new RegExp(`^${key}:\\s*"?(.+?)"?$`, "m"));
+    return m ? m[1].trim() : undefined;
+  };
+
+  return {
+    name: get("name") || "bootcamp-ai",
+    description: get("description") || "",
+    model: get("model") as "sonnet" | "opus" | "haiku" | undefined,
+    tools: get("tools")?.split(",").map((t) => t.trim()),
+    prompt,
+  };
 }
+
+const agentDef = await loadAgentDefinition();
+log("agent", `Loaded agent "${agentDef.name}" (model=${agentDef.model}, tools=${agentDef.tools?.join(", ")})`);
 
 async function sendMessage(chatId: number, text: string, replyToMessageId?: number) {
   log("telegram", `Sending reply to chat ${chatId}`);
@@ -68,6 +88,7 @@ async function handleMention(update: any) {
   const message = update.message;
   const chatId = message.chat.id;
   const messageId = message.message_id;
+  const updateId = update.update_id;
   const userPrompt = extractPrompt(message.text);
   const userName = message.from?.first_name || "someone";
 
@@ -85,11 +106,17 @@ async function handleMention(update: any) {
     for await (const msg of query({
       prompt: `A bootcamp member named ${userName} asks: ${userPrompt}`,
       options: {
-        systemPrompt: await loadAgentPrompt(),
-        model: "sonnet",
-        maxTurns: 3,
+        agent: agentDef.name,
+        agents: {
+          [agentDef.name]: {
+            description: agentDef.description,
+            prompt: agentDef.prompt,
+            model: agentDef.model,
+            tools: agentDef.tools,
+            maxTurns: 3,
+          },
+        },
         permissionMode: "plan",
-        allowedTools: ["WebSearch", "WebFetch"],
       },
     })) {
       if (msg.type === "assistant" && msg.message?.content) {
@@ -105,13 +132,15 @@ async function handleMention(update: any) {
         if (msg.is_error) {
           log("agent", `Error: ${msg.result}`);
         }
+        storeBotReply(updateId, resultText, msg.total_cost_usd);
       }
     }
 
     if (resultText) {
-      log("agent", `Reply length: ${resultText.length} chars`);
-      const reply = resultText.length > 4000 ? resultText.slice(0, 4000) + "..." : resultText;
-      await sendMessage(chatId, reply, messageId);
+      log("agent", `Reply (${resultText.length} chars):\n${resultText}`);
+      // TODO: re-enable when ready to go live
+      // const reply = resultText.length > 4000 ? resultText.slice(0, 4000) + "..." : resultText;
+      // await sendMessage(chatId, reply, messageId);
     } else {
       log("agent", "No text in agent response");
     }
@@ -140,6 +169,8 @@ const server = Bun.serve({
       const mentioned = isBotMentioned(update);
 
       log("webhook", `${from}: "${text}" | mentioned=${mentioned} | entities=${JSON.stringify(message.entities || [])}`);
+
+      storeMessage(update, mentioned);
 
       if (mentioned) {
         handleMention(update).catch((err) =>
