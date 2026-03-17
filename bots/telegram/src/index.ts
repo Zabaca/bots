@@ -208,6 +208,8 @@ async function handleMention(update: any) {
   }
 }
 
+const recentUpdateIds = new Set<number>();
+
 const server = Bun.serve({
   port: Number(process.env.PORT) || 3000,
   async fetch(req) {
@@ -215,6 +217,18 @@ const server = Bun.serve({
 
     if (req.method === "POST" && url.pathname === "/webhook") {
       const update = await req.json();
+
+      // Dedup: smee can deliver the same update twice
+      if (recentUpdateIds.has(update.update_id)) {
+        log("webhook", `Duplicate update_id=${update.update_id}, skipping`);
+        return new Response("ok");
+      }
+      recentUpdateIds.add(update.update_id);
+      if (recentUpdateIds.size > 1000) {
+        const first = recentUpdateIds.values().next().value;
+        recentUpdateIds.delete(first!);
+      }
+
       const message = update.message;
 
       if (!message) {
