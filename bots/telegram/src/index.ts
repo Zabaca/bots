@@ -155,7 +155,7 @@ async function handleMention(update: any) {
       recentContext,
       memberContext,
       userHistory,
-      `A bootcamp member named ${userName} asks: ${userPrompt}`,
+      `A bootcamp member named ${userName} (chat_id=${chatId}) asks: ${userPrompt}`,
     ].filter(Boolean).join("\n\n");
 
     log("agent", `Context: ${recentContext ? recentContext.split("\n").length - 2 + " messages preloaded" : "no history"}`);
@@ -168,7 +168,7 @@ async function handleMention(update: any) {
         settingSources: ["project"],
         maxTurns: 10,
         permissionMode: "dontAsk",
-        allowedTools: ['Bash']
+        allowedTools: ['Bash(*channel-history*)']
       },
     })) {
       if (msg.type === "system" && (msg as any).subtype === "init") {
