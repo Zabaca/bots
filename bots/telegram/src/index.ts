@@ -43,6 +43,7 @@ function formatMemberContext(chatId: number, userId: number, userName: string): 
   if (!member) return "";
 
   const parts = [`## Member profile: ${userName}`];
+  parts.push(`- user_id: ${member.user_id}`);
   parts.push(`- Claude Code installed: ${member.claude_code_installed ? "yes" : "not yet"}`);
 
   const meta = typeof member.meta === "string" ? JSON.parse(member.meta) : member.meta;
