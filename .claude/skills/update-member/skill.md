@@ -10,7 +10,7 @@ When a member tells you they've done something (installed Claude Code, connected
 Use the update script via Bash. The user's Telegram user_id is available in the Member profile section of the prompt.
 
 ```bash
-bun run .claude/skills/update-member/update.ts --user-id=<user_id> --field=<field> --value=<value>
+bun run .claude/skills/update-member/update-member.ts --user-id=<user_id> --field=<field> --value=<value>
 ```
 
 ## Supported fields
@@ -21,7 +21,7 @@ bun run .claude/skills/update-member/update.ts --user-id=<user_id> --field=<fiel
 
 User says "I have installed Claude Code":
 ```bash
-bun run .claude/skills/update-member/update.ts --user-id=12345 --field=claude_code_installed --value=true
+bun run .claude/skills/update-member/update-member.ts --user-id=12345 --field=claude_code_installed --value=true
 ```
 
 After running, acknowledge it and move on. Don't dwell on it.
