@@ -10,7 +10,7 @@ if (!BOT_TOKEN) {
 
 const BOT_USERNAME = "bootcamp_ai_bot";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const PROJECT_DIR = process.cwd();
+const PROJECT_DIR = new URL("../../..", import.meta.url).pathname;
 
 import { appendFileSync } from "node:fs";
 const LOG_FILE = new URL("../data/bot.log", import.meta.url).pathname;
